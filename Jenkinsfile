@@ -1,35 +1,34 @@
 pipeline {
-    agent any
+    agent {
+        docker {
+            image 'php:8.2-cli'  // Utilise une image Docker avec PHP pré-installé
+            args '-v /var/run/docker.sock:/var/run/docker.sock'
+        }
+    }
 
     environment {
         SONAR_TOKEN = credentials('mon_token_sonar')
+        COMPOSER_ALLOW_SUPERUSER = 1
     }
 
     stages {
-        stage('Check Composer Installation') {
+        stage('Installer Composer') {
             steps {
-                script {
-                    // Check if Composer is installed globally
-                    def composerInstalled = sh(script: 'command -v composer || true', returnStdout: true).trim()
-                    
-                    if (!composerInstalled) {
-                        // Install Composer locally if not found
-                        sh 'curl -sS https://getcomposer.org/installer | php'
-                        env.COMPOSER_CMD = 'php composer.phar'
-                    } else {
-                        env.COMPOSER_CMD = 'composer'
-                    }
-                }
+                sh '''
+                    curl -sS https://getcomposer.org/installer -o composer-setup.php
+                    php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+                    composer --version
+                '''
             }
         }
 
-        stage('Install dependencies') {
+        stage('Installer les dépendances') {
             steps {
-                sh '${COMPOSER_CMD} install --no-interaction --prefer-dist --optimize-autoloader'
+                sh 'composer install --no-interaction --prefer-dist --optimize-autoloader'
             }
         }
 
-        stage('Prepare Laravel') {
+        stage('Préparer Laravel') {
             steps {
                 sh '''
                     cp .env.example .env
@@ -38,9 +37,9 @@ pipeline {
             }
         }
 
-        stage('Run tests') {
+        stage('Exécuter les tests') {
             steps {
-                sh 'mkdir -p tests/logs'  // Ensure directory exists
+                sh 'mkdir -p tests/logs'
                 sh './vendor/bin/phpunit --log-junit tests/logs/junit.xml --coverage-clover tests/logs/coverage.xml'
             }
             post {
@@ -50,11 +49,11 @@ pipeline {
             }
         }
 
-        stage('SonarQube Analysis') {
+        stage('Analyse SonarQube') {
             steps {
                 withSonarQubeEnv('SonarServer') {
                     sh """
-                        vendor/bin/sonar-scanner \
+                        sonar-scanner \
                           -Dsonar.projectKey=laravel-realworld-example-app \
                           -Dsonar.sources=app \
                           -Dsonar.tests=tests \
@@ -65,24 +64,11 @@ pipeline {
                 }
             }
         }
-
-        stage('Deliver') {
-            steps {
-                script {
-                    if (fileExists('./jenkins/scripts/deliver.sh')) {
-                        sh 'chmod +x ./jenkins/scripts/deliver.sh'
-                        sh './jenkins/scripts/deliver.sh'
-                    } else {
-                        echo 'Warning: deliver.sh script not found. Delivery step skipped.'
-                    }
-                }
-            }
-        }
     }
 
     post {
         always {
-            cleanWs()  // Clean workspace after build
+            cleanWs()
         }
     }
 }
