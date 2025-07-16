@@ -1,10 +1,5 @@
 pipeline {
-    agent {
-        docker {
-            image 'php:8.2-cli'  // Utilise une image Docker avec PHP pré-installé
-            args '-v /var/run/docker.sock:/var/run/docker.sock'
-        }
-    }
+    agent any  // Utilise un agent standard au lieu de Docker
 
     environment {
         SONAR_TOKEN = credentials('mon_token_sonar')
@@ -12,13 +7,25 @@ pipeline {
     }
 
     stages {
-        stage('Installer Composer') {
+        stage('Vérifier les prérequis') {
             steps {
-                sh '''
-                    curl -sS https://getcomposer.org/installer -o composer-setup.php
-                    php composer-setup.php --install-dir=/usr/local/bin --filename=composer
-                    composer --version
-                '''
+                script {
+                    // Vérifie que PHP est installé
+                    def phpInstalled = sh(script: 'command -v php || true', returnStdout: true).trim()
+                    if (!phpInstalled) {
+                        error 'PHP n\'est pas installé sur cet agent Jenkins. Veuillez installer PHP et les extensions requises.'
+                    }
+                    
+                    // Installe Composer s'il n'existe pas
+                    def composerInstalled = sh(script: 'command -v composer || true', returnStdout: true).trim()
+                    if (!composerInstalled) {
+                        sh '''
+                            curl -sS https://getcomposer.org/installer -o composer-setup.php
+                            php composer-setup.php --install-dir=/usr/local/bin --filename=composer
+                            rm composer-setup.php
+                        '''
+                    }
+                }
             }
         }
 
